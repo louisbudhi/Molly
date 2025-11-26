@@ -1,7 +1,6 @@
 <!DOCTYPE html>
 <html lang="en" class="light">
 <head>
-    <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABmJLR0QA/wD/AP+gvaeTAAAAu0lEQVQ4jWPkQWdIAc75q/8L/y8A6gN5T81/T1b8f0N3rP////r/x8+f5cAPkQcO/H35A6w8lP8QYgQz2f8XqHhT/f+z2wDZA9kDSYmFw0Vz7dYQZ4wY/3/h7M9/z1C8+j8rP1dZ/z8x+p8J0xZgBkkGSQsC+A8S6D+D0/8/w9eB/6v7F8Q44D8jJ0MABzJ1L9x95R/4uLz/1/Uv/L+/+hM2/b+o+g8j9WcICvM+XAAAAAElFTkSuQmCC">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Molly</title>
@@ -254,12 +253,15 @@
                 </div>
                 <button id="close-sidebar-btn" class="md:hidden p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded text-gray-500 dark:text-gray-400"><i data-lucide="x" class="w-5 h-5"></i></button>
             </div>
-            <div class="px-4 pb-4">
+            <div class="px-4 pb-3">
                 <button id="new-chat-btn" class="flex items-center gap-2 w-full px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors shadow-md hover:shadow-lg group overflow-hidden whitespace-nowrap">
                     <i data-lucide="plus" class="w-5 h-5 flex-shrink-0"></i> <span class="font-medium">New Chat</span>
                 </button>
             </div>
-            <!-- HISTORY CONTAINER -->
+            <!-- HISTORY HEADER & CONTAINER -->
+            <div class="px-4 py-2">
+                <h3 class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Your Chats</h3>
+            </div>
             <div id="history-container" class="flex-1 overflow-y-auto px-2 space-y-1 scrollbar-custom pb-4">
                 <div class="px-4 py-4 text-center text-xs text-gray-400 italic">Log in to save history</div>
             </div>
@@ -459,11 +461,7 @@
             toggleComfySettings(provider);
             const url = localStorage.getItem('molly_comfy_url');
             if(url) comfyuiUrlInput.value = url;
-            // Fetch models only if ComfyUI is the current setting
-            if (provider === 'comfyui') {
-                 // Initial model fetch, allowing UI to populate the default/fallback first
-                fetchComfyModels(comfyuiUrlInput.value);
-            }
+            if (provider === 'comfyui' && url) fetchComfyModels(url);
         }
 
         function toggleComfySettings(provider) {
@@ -478,6 +476,9 @@
              const fallbackCkpt = "sd_xl_base_1.0.safetensors";
              let models = [fallbackCkpt]; // Start with a guaranteed model
              let success = false;
+             
+             // Clear existing options
+             comfyuiCkptInput.innerHTML = '';
 
              try {
                  const cleanUrl = url.replace(/\/$/, '');
@@ -494,14 +495,13 @@
                  console.error("ComfyUI Model Fetch Error", e);
              }
              
-             comfyuiCkptInput.innerHTML = '';
-             
+             // Populate options
              if (models.length > 0) {
                  models.forEach(model => {
                      const option = document.createElement('option');
                      option.value = model;
                      option.textContent = model;
-                     if (!success && model === fallbackCkpt) option.textContent += " (Fallback)";
+                     if (!success && model === fallbackCkpt) option.textContent += " (Fallback - NO CONNECTION)";
                      comfyuiCkptInput.appendChild(option);
                  });
                  const savedCkpt = localStorage.getItem('molly_comfy_ckpt');
@@ -510,11 +510,12 @@
                  comfyuiCkptInput.innerHTML = '<option>Connection Error/No Models Found</option>';
              }
 
-             if (!success) {
-                 // Ensure the dropdown is populated even if the connection failed, just with the fallback
-                 if(comfyuiCkptInput.options.length === 0) {
-                     comfyuiCkptInput.innerHTML = `<option value="${fallbackCkpt}">${fallbackCkpt} (Fallback)</option>`;
-                 }
+             if (!success && imgProviderSelect.value === 'comfyui') {
+                 // If connection failed AND ComfyUI is selected, force Google as stable fallback
+                 imgProviderSelect.value = 'google';
+                 toggleComfySettings('google');
+                 localStorage.setItem('molly_img_provider', 'google');
+                 alert("ComfyUI failed to connect or found no models. Switched provider to Google Imagen (Cloud) for stability.");
              }
         }
 
@@ -565,13 +566,15 @@
 
                 // 2. Poll History (Simple polling)
                 let filename = null;
-                for(let i=0; i<30; i++) { 
+                for(let i=0; i<30; i++) { // Wait up to 30s
                     await new Promise(r => setTimeout(r, 1000));
                     const histResp = await fetch(`${comfyUrl}/history/${promptId}`);
                     if(histResp.ok) {
                         const histData = await histResp.json();
                         if(histData[promptId] && histData[promptId].outputs) {
+                            // Found output
                             const outputs = histData[promptId].outputs;
+                            // Assuming node 9 is SaveImage
                             if(outputs["9"] && outputs["9"].images && outputs["9"].images.length > 0) {
                                 filename = outputs["9"].images[0].filename;
                                 break;
@@ -670,7 +673,7 @@
             currentUser = user;
             const name = user.displayName || user.email.split('@')[0];
             userDisplayName.textContent = name;
-            userSubtext.textContent = "Pro Research";
+            userSubtext.textContent = "Logged In";
             welcomeGreeting.textContent = `Hello, ${name}`;
             profileDropdown.classList.remove('hidden');
             loadCustomAvatar();
@@ -807,7 +810,6 @@
                 if (isImage) { filePreviewImg.src = base64Data; filePreviewImg.classList.remove('hidden'); filePreviewDoc.classList.add('hidden'); } 
                 else { filePreviewImg.classList.add('hidden'); filePreviewDoc.classList.remove('hidden'); }
                 fileNameDisplay.textContent = file.name;
-                updateSendButton();
             };
             reader.readAsDataURL(file);
         }
@@ -830,7 +832,7 @@
             
             userInput.value = '';
             const attachedImage = currentAttachment ? currentAttachment.url : null;
-            const originalAttachment = currentAttachment; // Store for API payload
+            const originalAttachment = currentAttachment; 
             
             updateSendButton();
             appendUserMessage(text, attachedImage);
@@ -880,14 +882,9 @@
                 
                 let generatedImageUrl = null;
                 if (aiText.includes('[GENERATE_IMAGE:')) {
-                    const imagePrompt = aiText.match(/\[GENERATE_IMAGE: (.*?)\]/)?.[1];
-                    try {
-                        generatedImageUrl = await generateImage(imagePrompt);
-                        aiText = `Here is the image I generated for: **${imagePrompt}**`;
-                    } catch(imgError) {
-                        generatedImageUrl = null;
-                        aiText = `Sorry, I couldn't generate that image. Error: ${imgError.message}`;
-                    }
+                    const imagePrompt = aiText.match(/\[GENERATE_IMAGE: (.*?)\]/)[1];
+                    generatedImageUrl = await generateImage(imagePrompt);
+                    aiText = `Here is the image of ${imagePrompt}`;
                 }
                 
                 let sources = [];
@@ -921,7 +918,11 @@
                  const lastUserMsgNode = messagesList.lastElementChild;
                  if (lastUserMsgNode) messagesList.removeChild(lastUserMsgNode);
                  
-                 // Re-send the query. The user message is automatically taken from the chatHistory's new last message when handleSend() constructs the userParts.
+                 // Extract original user text
+                 const originalUserText = chatHistory[chatHistory.length - 1].parts.find(p => p.text)?.text || '';
+                 
+                 // Re-add the user message and re-send
+                 userInput.value = originalUserText;
                  await handleSend(); 
              }
         }
@@ -940,9 +941,9 @@
         function appendMollyMessage(text, sources, generatedImageUrl = null) {
             const div = document.createElement('div'); div.className = "flex gap-4 justify-start fade-in w-full";
             let sourcesHtml = sources.length > 0 ? `<div class="mt-3 pt-2 border-t border-gray-200 dark:border-gray-700/50"><p class="text-xs text-indigo-600 dark:text-indigo-400 font-semibold mb-2 flex items-center gap-1"><i data-lucide="book-open" class="w-3 h-3"></i> SOURCES</p><div class="flex flex-wrap gap-2">${sources.map(s => `<a href="${s.uri}" target="_blank" class="text-xs bg-gray-50 dark:bg-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800 border border-gray-200 dark:border-gray-700 text-indigo-600 dark:text-indigo-400 px-2 py-1 rounded transition-colors flex items-center gap-1 truncate max-w-[200px]"><span class="truncate">${s.title}</span><i data-lucide="external-link" class="w-3 h-3 opacity-50"></i></a>`).join('')}</div></div>` : '';
-            let imageHtml = generatedImageUrl ? `<div class="mb-4 mt-2"><img src="${generatedImageUrl}" class="rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 max-w-sm w-full"></div>` : '';
+            let imageHtml = generatedImageUrl ? `<div class="mb-4 mt-2"><img src="${generatedImageUrl}" class="rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 max-w-sm w-full"><div class="image-generating absolute inset-0 rounded-xl opacity-0 pointer-events-none"></div></div>` : '';
             div.innerHTML = `
-                <div class="w-8 h-8 rounded-full bg-indigo-600 dark:bg-indigo-600 flex-shrink-0 flex items-center justify-center mt-1 mr-2 group cursor-pointer" title="Read Aloud" onclick="playTTS(\`${text.replace(/`/g, '\\`')}\')"><i data-lucide="sparkles" class="w-4 h-4 text-white group-hover:hidden"></i><i data-lucide="volume-2" class="w-4 h-4 text-white hidden group-hover:block"></i></div>
+                <div class="w-8 h-8 rounded-full bg-indigo-600 dark:bg-indigo-600 flex-shrink-0 flex items-center justify-center mt-1 mr-2 group cursor-pointer" title="Read Aloud"><i data-lucide="sparkles" class="w-4 h-4 text-white group-hover:hidden"></i><i data-lucide="volume-2" class="w-4 h-4 text-white hidden group-hover:block"></i></div>
                 <div class="flex-1 max-w-[90%]">
                     <div class="text-gray-900 dark:text-gray-100 px-2 py-1 leading-relaxed">
                         ${imageHtml}
@@ -972,6 +973,9 @@
                     </div>
                 </div>`;
             
+            const speakerIcon = div.querySelector('.w-8');
+            speakerIcon.onclick = async () => { speakerIcon.classList.add('playing-audio'); const audio = await playTTS(text); if(audio) audio.onended = () => speakerIcon.classList.remove('playing-audio'); };
+            
             // Bind Regenerate
             const regenBtn = div.querySelector('.regenerate-btn');
             if (regenBtn) regenBtn.onclick = () => regenerateResponse();
@@ -981,8 +985,17 @@
             const shareMenu = div.querySelector('.share-menu');
             shareBtn.onclick = (e) => { e.stopPropagation(); shareMenu.classList.toggle('hidden'); };
             
+            // Bind Export Actions
+            div.querySelector('.export-docs-btn').onclick = () => { 
+                const blob = new Blob(['<html><body>' + marked.parse(text) + '</body></html>'], {type: 'application/msword'});
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = 'molly-chat.doc'; a.click();
+                shareMenu.classList.add('hidden'); 
+            };
+            
             // Close menu on click outside
-            document.addEventListener('click', (e) => { if (shareMenu && !shareMenu.contains(e.target) && !shareBtn.contains(e.target)) shareMenu.classList.add('hidden'); });
+            document.addEventListener('click', (e) => { if (!shareMenu.contains(e.target) && !shareBtn.contains(e.target)) shareMenu.classList.add('hidden'); });
 
 
             messagesList.appendChild(div);
@@ -996,14 +1009,6 @@
             });
             lucide.createIcons(); scrollToBottom();
         }
-        
-        function exportDoc(text) {
-             const blob = new Blob(['<html><body>' + marked.parse(text) + '</body></html>'], {type: 'application/msword'});
-             const url = URL.createObjectURL(blob);
-             const a = document.createElement('a');
-             a.href = url; a.download = 'molly-chat.doc'; a.click();
-        }
-
 
         function initTheme() { if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) { isDarkMode = true; document.documentElement.classList.add('dark'); } updateThemeToggleUI(); }
         function toggleDarkMode() { isDarkMode = !isDarkMode; if (isDarkMode) { document.documentElement.classList.add('dark'); localStorage.theme = 'dark'; } else { document.documentElement.classList.remove('dark'); localStorage.theme = 'light'; } updateThemeToggleUI(); }
@@ -1036,4 +1041,3 @@
     </script>
 </body>
 </html>
-
